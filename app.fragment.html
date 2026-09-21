@@ -1,0 +1,858 @@
+<title>Podcast Notes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf8f3">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.0/lame.min.js"></script>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper:#1c1b19; --paper-tone:#26241f; --card:#26251f;
+    --ink:#f1ede4; --soft:#cfcbc0; --muted:#a8a498; --faint:#84806f;
+    --line:#3a3833; --line2:#4a4740; --accent:#c9503f; --accent-2:#e06a55;
+    --rec-fill:#2e2a26; --rec-text:#f1ede4; --shadow:#0c0b0a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#1c1b19; --paper-tone:#26241f; --card:#26251f;
+  --ink:#f1ede4; --soft:#cfcbc0; --muted:#a8a498; --faint:#84806f;
+  --line:#3a3833; --line2:#4a4740; --accent:#c9503f; --accent-2:#e06a55;
+  --rec-fill:#2e2a26; --rec-text:#f1ede4; --shadow:#0c0b0a;
+}
+:root { --rec-fill:#1c1b19; --rec-text:#faf8f3; --shadow:#6d281e; }
+html, body { background:var(--paper); }
+body { font-size:17px; line-height:1.45; overscroll-behavior:none; -webkit-tap-highlight-color:transparent; }
+button { font-family:var(--sans); font-weight:600; font-size:16px; color:var(--ink); background:none; border:0; padding:0; cursor:pointer; touch-action:manipulation; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+button:disabled { opacity:.45; cursor:default; }
+button svg { flex:none; }
+.screen { display:none; }
+.screen.on { display:flex; flex-direction:column; min-height:100vh; min-height:100dvh; }
+.wrap { width:100%; max-width:30rem; margin:0 auto; padding:calc(var(--s4) + env(safe-area-inset-top)) var(--s4) var(--s4); flex:1; }
+@media (min-width: 700px) {
+  body { background:#e4dfd3; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 0; box-sizing:border-box; }
+  #app { width:390px; height:844px; overflow:auto; border-radius:44px; border:12px solid #1c1b19; background:var(--paper); box-shadow:0 30px 60px rgba(0,0,0,.25); scrollbar-width:none; }
+  #app::-webkit-scrollbar { display:none; }
+  .screen.on { min-height:100%; }
+  .wrap { padding-top:44px; }
+}
+@media (min-width: 700px) and (prefers-color-scheme: dark) { body { background:#0f0e0d; } #app { border-color:#3a3833; } }
+.hidden { display:none !important; }
+h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-height:1.05; font-size:34px; margin:var(--s2) 0 var(--s3); }
+.sech { display:flex; align-items:baseline; justify-content:space-between; font-family:var(--sans); margin:var(--s5) 0 var(--s1); }
+.sech span:first-child { font-weight:700; font-size:13px; color:var(--muted); }
+.sech span:last-child { font-weight:500; font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
+.hint { font-family:var(--sans); font-size:13px; color:var(--faint); line-height:1.5; margin:var(--s3) 0 0; }
+.msg { color:var(--accent); font-family:var(--sans); font-weight:500; font-size:14px; margin:var(--s3) 0 0; }
+.msg:empty { display:none; }
+
+/* pills and the sticky bottom bar */
+.pill { width:100%; height:54px; border-radius:27px; font-size:17px; font-weight:700; border:2px solid var(--ink); background:var(--paper); position:relative; overflow:hidden; }
+.pill.solid { background:var(--ink); color:var(--paper); }
+.pill.busy { color:var(--paper); background:linear-gradient(var(--ink), var(--ink)) 0 0 / var(--p, 0%) 100% no-repeat var(--paper); }
+.pill.busy span { position:relative; mix-blend-mode:difference; color:#fff; }
+.bar { position:sticky; bottom:0; margin-top:auto; padding:var(--s4) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom)); background:linear-gradient(180deg, rgba(0,0,0,0) 0%, var(--paper) 40%); pointer-events:none; }
+.bar > * { max-width:30rem; margin:0 auto; pointer-events:auto; }
+
+/* library */
+.search { display:flex; align-items:center; gap:10px; height:44px; padding:0 14px; background:var(--paper-tone); border-radius:12px; color:var(--faint); }
+.search input { flex:1; border:0; background:none; font-family:var(--sans); font-size:15px; color:var(--ink); outline:none; min-width:0; }
+.search input::placeholder { color:var(--faint); }
+.group { margin-top:var(--s4); }
+.ep { display:flex; flex-direction:column; gap:6px; width:100%; text-align:left; padding:var(--s3) 0; align-items:stretch; }
+.ep .n { font-family:var(--serif); font-weight:600; font-size:18px; line-height:1.3; }
+.ep .m { display:flex; align-items:center; gap:8px; font-family:var(--sans); font-weight:500; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.ep .m b { color:var(--accent); font-weight:600; }
+.ep .pr { height:3px; background:var(--line); border-radius:2px; overflow:hidden; }
+.ep .pr i { display:block; height:100%; background:var(--ink); }
+.empty { color:var(--soft); font-size:17px; margin-top:var(--s5); }
+.empty p { margin:0 0 var(--s3); }
+
+/* player */
+.topbar { display:flex; justify-content:space-between; align-items:center; height:32px; }
+.topbar .back { color:var(--muted); font-size:14px; gap:4px; max-width:70%; }
+.topbar .back span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.topbar .more { width:44px; height:32px; color:var(--muted); justify-content:flex-end; }
+.recstate { display:flex; align-items:center; gap:6px; font-family:var(--sans); font-weight:700; font-size:13px; color:var(--accent); }
+.recstate i { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+.eptitle { font-family:var(--serif); font-weight:600; font-size:21px; line-height:1.25; margin:var(--s2) 0 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.bigwrap { display:flex; justify-content:center; padding:var(--s5) 0 var(--s4); }
+.big { width:min(75vw, 292px); height:min(75vw, 292px); border-radius:50%; background:var(--accent); color:#faf8f3; flex-direction:column; gap:6px;
+  box-shadow:0 10px 0 var(--shadow); transition:transform .08s; user-select:none; }
+.big:active { transform:translateY(6px); box-shadow:0 4px 0 var(--shadow); }
+.big .t { font-size:34px; font-weight:800; letter-spacing:-.02em; line-height:1; font-variant-numeric:tabular-nums; }
+.big .s { font-size:15px; font-weight:600; opacity:.85; }
+.big .q { font-size:13px; font-weight:500; color:var(--faint); margin-top:10px; display:none; }
+.big.rec { background:var(--rec-fill); color:var(--rec-text); box-shadow:0 10px 0 var(--shadow), inset 0 0 0 4px var(--accent); animation:pulse 1.3s ease-out infinite; }
+.big.rec .t { font-size:56px; letter-spacing:-.03em; }
+.big.rec .s { color:var(--accent-2); opacity:1; }
+.big.rec .q { display:block; }
+.big.rec svg { display:none; }
+.big.busy { background:var(--soft); }
+@keyframes pulse { 0% { outline:0 solid rgba(201,80,63,.55); outline-offset:0; } 100% { outline:20px solid rgba(201,80,63,0); outline-offset:16px; } }
+.transport { display:flex; justify-content:center; align-items:center; gap:22px; }
+.transport button { width:62px; height:62px; border-radius:50%; border:2px solid var(--line2); flex-direction:column; gap:0; font-size:13px; font-weight:700; }
+.transport .play { width:78px; height:78px; background:var(--ink); color:var(--paper); border-color:var(--ink); }
+.seek { margin:var(--s4) 0 0; }
+.seek input { -webkit-appearance:none; appearance:none; width:100%; height:22px; background:transparent; margin:0; display:block; }
+.seek input::-webkit-slider-runnable-track { height:4px; border-radius:2px; background:linear-gradient(var(--ink), var(--ink)) 0 0 / var(--p, 0%) 100% no-repeat var(--line); }
+.seek input::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--ink); border:3px solid var(--paper); box-shadow:0 0 0 1px var(--ink); margin-top:-8px; }
+.seek input::-moz-range-track { height:4px; border-radius:2px; background:var(--line); }
+.seek input::-moz-range-progress { height:4px; border-radius:2px; background:var(--ink); }
+.seek input::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--ink); border:3px solid var(--paper); box-shadow:0 0 0 1px var(--ink); }
+.recording .seek input::-webkit-slider-thumb { background:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.recording .transport { opacity:.45; }
+.times { display:flex; justify-content:space-between; align-items:center; font-family:var(--sans); font-weight:500; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:var(--s2); }
+.times button { font-size:13px; font-weight:600; color:var(--soft); border:1px solid var(--line2); border-radius:999px; padding:3px 12px; }
+
+/* notes */
+.note { display:flex; align-items:center; gap:12px; height:46px; }
+.note .at { font-family:var(--sans); font-weight:700; font-size:17px; font-variant-numeric:tabular-nums; height:46px; }
+.note .len { font-family:var(--sans); font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.note .sp { flex:1; }
+.note .ic { width:44px; height:44px; color:var(--soft); }
+.note .ic.on { color:var(--accent); }
+.note.now .at, .note.now .len { color:var(--accent); }
+.nonotes { color:var(--muted); font-size:15px; margin:var(--s2) 0 0; }
+
+/* files */
+.file { display:flex; align-items:center; gap:14px; padding:var(--s3) 0; border-top:1px solid var(--line); }
+.file:last-child { border-bottom:1px solid var(--line); }
+.file .tile { width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex:none; }
+.file .tile.ink { background:var(--ink); color:var(--paper); }
+.file .tile.red { background:var(--accent); color:#faf8f3; }
+.file .tile.tone { background:var(--paper-tone); color:var(--ink); }
+.file .tx { flex:1; min-width:0; }
+.file .k { font-family:var(--serif); font-weight:600; font-size:17px; line-height:1.25; }
+.file .m { font-family:var(--sans); font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:2px; }
+.file .ic { width:44px; height:44px; color:var(--ink); }
+.stale { color:var(--accent); font-family:var(--sans); font-weight:500; font-size:14px; margin:var(--s2) 0 var(--s2); }
+.foot { margin-top:var(--s6); display:flex; gap:var(--s4); flex-wrap:wrap; }
+.foot button { font-size:13px; color:var(--muted); }
+.getapp { margin:var(--s3) 0 var(--s4); padding:var(--s4); background:var(--paper-tone); border-radius:14px; }
+.getapp p { font-size:15px; color:var(--soft); margin:0 0 var(--s3); }
+</style>
+
+<div id="app">
+<div id="library" class="screen on"><div class="wrap">
+  <h1>Podcast Notes</h1>
+  <div id="getapp" class="getapp hidden">
+    <p>Recording and saving do not work inside this viewer. Save the app file into your Downloads folder, then open <b>file:///sdcard/Download/podcast-notes.html</b> in Chrome and add it to the home screen.</p>
+    <button id="getappbtn" class="pill solid">Get the app file</button>
+  </div>
+  <label class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><input id="search" type="search" placeholder="Search episodes" autocomplete="off"></label>
+  <div id="eplist"></div>
+  <div id="empty" class="empty hidden">
+    <p>No episodes yet.</p>
+    <p>Tap <b>Add episodes</b> and pick MP3 files. Chrome opens the phone's file picker, so the files must sit in a folder it can reach, like Downloads.</p>
+    <p>Name files like <b>Show name - Episode title.mp3</b> and the list groups them by show.</p>
+  </div>
+  <p id="libmsg" class="msg"></p>
+  <input id="file" type="file" accept="audio/mpeg,.mp3" multiple class="hidden">
+</div>
+<div class="bar"><button id="add" class="pill solid"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span>Add episodes</span></button></div>
+</div>
+
+<div id="player" class="screen"><div class="wrap">
+  <div class="topbar">
+    <button id="back" class="back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg><span id="showname">Episodes</span></button>
+    <div id="recstate" class="recstate hidden"><i></i><span>Recording</span></div>
+    <button id="remove" class="more" aria-label="Remove episode"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="6" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="18" r="1.6"></circle></svg></button>
+  </div>
+  <div id="eptitle" class="eptitle"></div>
+
+  <div class="bigwrap"><button id="big" class="big">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+    <span class="t" id="bigt">Note</span><span class="s" id="bigs">tap to record</span><span class="q">podcast still playing, quieter</span>
+  </button></div>
+
+  <div class="transport">
+    <button id="b15"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.6-5.9"></path><path d="M4 4v5h5"></path></svg><span>15</span></button>
+    <button id="play" class="play"></button>
+    <button id="f30"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"></path><path d="M20 4v5h-5"></path></svg><span>30</span></button>
+  </div>
+  <div class="seek">
+    <input id="seek" type="range" min="0" max="100" step="1" value="0">
+    <div class="times"><span id="tcur">0:00</span><button id="speed">1&times;</button><span id="tdur">0:00</span></div>
+  </div>
+  <p id="msg" class="msg"></p>
+
+  <div class="sech"><span>Notes</span><span id="notecount"></span></div>
+  <div id="notes"></div>
+  <p id="nonotes" class="nonotes">None yet. Tap the big button while the episode plays.</p>
+
+  <div id="files" class="hidden">
+    <div class="sech"><span>Files</span><span id="filesmeta"></span></div>
+    <p id="stale" class="stale hidden">Notes changed since these were made. Tap Make the files again.</p>
+    <div id="filelist"></div>
+    <p class="hint" id="filehint">Saved files go to Downloads on this phone. Share sends one to Drive or another app.</p>
+    <p id="viewernote" class="hint hidden">Saving does not work inside the Claude viewer. Open the app from the file on your phone to save or share these.</p>
+    <button id="saveall" class="pill" style="margin-top:var(--s3)">Save all three</button>
+  </div>
+
+  <div class="foot">
+    <button id="mic">Mic: earbuds</button>
+  </div>
+</div>
+<div class="bar"><button id="render" class="pill"><span id="rendertext">Make the files</span></button></div>
+</div>
+</div>
+<script type="text/plain" id="appsrc">__APPSRC__</script>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const DUCK = 0.22;        // podcast level under your voice in the finished file
+const DUCK_LIVE = 0.25;   // podcast level in your ears while you talk
+const VOICE_PEAK = 0.85;
+let CHUNK_SEC = 120;
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(x).padStart(2, '0'); };
+const mb = n => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const inViewer = !!(window.claude && typeof window.claude.use === 'function');
+const svg = (d, size) => '<svg width="' + (size || 22) + '" height="' + (size || 22) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+const I = {
+  play: svg('<path d="M7 4.5v15l12-7.5z"></path>'),
+  playSolid: '<svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"></path></svg>',
+  pauseSolid: '<svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>',
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"></rect>'),
+  save: svg('<path d="M12 4v11M7 10l5 5 5-5M4 19h16"></path>'),
+  trash: svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path>'),
+  share: svg('<circle cx="18" cy="5" r="2.5"></circle><circle cx="6" cy="12" r="2.5"></circle><circle cx="18" cy="19" r="2.5"></circle><path d="M8.2 10.8l7.6-4.6M8.2 13.2l7.6 4.6"></path>', 24),
+  wave: svg('<path d="M4 12h3l3-7 4 14 3-7h3"></path>'),
+  mic: svg('<rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>'),
+  doc: svg('<path d="M5 4h9l5 5v11H5z"></path><path d="M14 4v5h5M8 13h8M8 17h8"></path>'),
+};
+
+/* ---------- storage ---------- */
+let dbp = null;
+function openDB() {
+  if (dbp) return dbp;
+  dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('podcast-notes', 1);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      db.createObjectStore('episodes', { keyPath: 'id' });
+      db.createObjectStore('notes', { keyPath: 'id' }).createIndex('ep', 'episodeId');
+      db.createObjectStore('renders', { keyPath: 'episodeId' });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return dbp;
+}
+const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+async function os(name, mode) { const db = await openDB(); return db.transaction(name, mode || 'readonly').objectStore(name); }
+const idb = {
+  get: async (n, k) => req((await os(n)).get(k)),
+  all: async n => req((await os(n)).getAll()),
+  put: async (n, v) => req((await os(n, 'readwrite')).put(v)),
+  del: async (n, k) => req((await os(n, 'readwrite')).delete(k)),
+  notesFor: async id => req((await os('notes')).index('ep').getAll(id)),
+};
+
+/* ---------- state ---------- */
+const audio = new Audio();
+audio.preload = 'metadata';
+let cur = null, notes = [], render = null, render2 = null, render3 = null, objUrl = null, rec = null, preview = null, seeking = false, lastSave = 0, query = '';
+const SPEEDS = [1, 1.25, 1.5, 2, 0.8];
+let speed = 1;
+const settings = { ec: localStorage.getItem('pn-ec') === '1' };
+function say(el, text) { $(el).textContent = text || ''; }
+
+/* the file name carries the show: "Show name - Episode title" */
+function splitName(name) {
+  const m = name.match(/^(.{1,60}?)\s*(?: - | – | — |: | \| )\s*(.+)$/);
+  if (m && !/^\d+$/.test(m[1].trim())) return { show: m[1].trim(), title: m[2].trim() };
+  return { show: '', title: name };
+}
+
+/* ---------- library ---------- */
+async function showLibrary() {
+  if (rec) await stopRecord();
+  audio.pause();
+  cur = null;
+  $('#player').classList.remove('on');
+  $('#library').classList.add('on');
+  window.scrollTo(0, 0); $('#app').scrollTop = 0;
+  await drawLibrary();
+}
+async function drawLibrary() {
+  const eps = (await idb.all('episodes')).sort((a, b) => b.addedAt - a.addedAt);
+  const allNotes = await idb.all('notes');
+  const q = query.trim().toLowerCase();
+  const list = $('#eplist');
+  list.innerHTML = '';
+  $('#empty').classList.toggle('hidden', eps.length > 0);
+  const groups = new Map();
+  for (const ep of eps) {
+    if (q && !ep.name.toLowerCase().includes(q)) continue;
+    const p = splitName(ep.name);
+    if (!groups.has(p.show)) groups.set(p.show, []);
+    groups.get(p.show).push({ ep, title: p.title, n: allNotes.filter(x => x.episodeId === ep.id).length });
+  }
+  const keys = Array.from(groups.keys()).sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+  for (const k of keys) {
+    const rows = groups.get(k);
+    const g = document.createElement('div');
+    g.className = 'group';
+    if (k || keys.length > 1) {
+      const h = document.createElement('div');
+      h.className = 'sech';
+      h.style.margin = '0 0 4px';
+      h.innerHTML = '<span></span><span>' + (rows.length === 1 ? '1 episode' : rows.length + ' episodes') + '</span>';
+      h.querySelector('span').textContent = k || 'Other episodes';
+      g.appendChild(h);
+    }
+    for (const r of rows) {
+      const ep = r.ep;
+      const b = document.createElement('button');
+      b.className = 'ep';
+      const parts = [];
+      parts.push(r.n === 0 ? '<span>no notes</span>' : '<b>' + (r.n === 1 ? '1 note' : r.n + ' notes') + '</b>');
+      if (ep.duration) parts.push('<span>' + fmt(ep.duration) + '</span>');
+      if (ep.duration && ep.lastPos >= ep.duration - 5) parts.push('<span>finished</span>');
+      else if (ep.lastPos > 5) parts.push('<span>at ' + fmt(ep.lastPos) + '</span>');
+      const pct = ep.duration ? Math.min(100, ep.lastPos / ep.duration * 100) : 0;
+      b.innerHTML = '<div class="n"></div><div class="m">' + parts.join('<span>&middot;</span>') + '</div><div class="pr"><i style="width:' + pct.toFixed(1) + '%"></i></div>';
+      b.querySelector('.n').textContent = r.title;
+      b.onclick = () => openEpisode(ep);
+      g.appendChild(b);
+    }
+    list.appendChild(g);
+  }
+  if (q && !keys.length && eps.length) { list.innerHTML = '<p class="nonotes">Nothing matches that.</p>'; }
+}
+$('#search').oninput = e => { query = e.target.value; drawLibrary(); };
+
+async function importFiles(files) {
+  const list = Array.from(files).filter(f => /\.mp3$/i.test(f.name) || f.type === 'audio/mpeg');
+  if (!list.length) { say('#libmsg', 'Pick MP3 files. Other formats are not supported yet.'); return; }
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+  let i = 0;
+  for (const f of list) {
+    i++;
+    say('#libmsg', 'Adding ' + i + ' of ' + list.length + ': ' + f.name);
+    const data = await f.arrayBuffer();
+    await idb.put('episodes', { id: uid(), name: f.name.replace(/\.mp3$/i, ''), size: f.size, addedAt: Date.now(), lastPos: 0, duration: 0,
+      file: new Blob([data], { type: 'audio/mpeg' }) });
+  }
+  say('#libmsg', '');
+  await drawLibrary();
+}
+$('#add').onclick = () => $('#file').click();
+$('#file').onchange = async e => { const fl = e.target.files; await importFiles(fl); e.target.value = ''; };
+
+/* ---------- player ---------- */
+async function openEpisode(ep) {
+  cur = ep;
+  notes = (await idb.notesFor(ep.id)).sort((a, b) => a.pos - b.pos);
+  render = await idb.get('renders', ep.id);
+  render2 = await idb.get('renders', ep.id + ':notes');
+  render3 = await idb.get('renders', ep.id + ':times');
+  if (objUrl) URL.revokeObjectURL(objUrl);
+  objUrl = URL.createObjectURL(ep.file);
+  audio.src = objUrl;
+  audio.playbackRate = speed;
+  const p = splitName(ep.name);
+  $('#showname').textContent = p.show || 'Episodes';
+  $('#eptitle').textContent = p.title;
+  say('#msg', '');
+  $('#library').classList.remove('on');
+  $('#player').classList.add('on');
+  window.scrollTo(0, 0); $('#app').scrollTop = 0;
+  drawNotes();
+  drawFiles();
+  drawTime();
+  drawPlay();
+  setSession();
+}
+audio.addEventListener('loadedmetadata', async () => {
+  if (!cur) return;
+  if (cur.lastPos > 1 && cur.lastPos < audio.duration - 2) audio.currentTime = cur.lastPos;
+  if (!cur.duration && isFinite(audio.duration)) { cur.duration = audio.duration; await idb.put('episodes', cur); }
+  drawTime();
+});
+audio.addEventListener('timeupdate', () => { drawTime(); savePos(false); });
+audio.addEventListener('play', drawPlay);
+audio.addEventListener('pause', () => { drawPlay(); savePos(true); });
+audio.addEventListener('ended', () => { drawPlay(); });
+audio.addEventListener('error', () => say('#msg', 'This file did not play. It may not be a real MP3.'));
+
+function drawTime() {
+  const d = isFinite(audio.duration) ? audio.duration : (cur && cur.duration) || 0;
+  $('#tdur').textContent = fmt(d);
+  $('#tcur').textContent = fmt(audio.currentTime);
+  if (!seeking) {
+    const s = $('#seek');
+    s.max = Math.max(1, Math.floor(d));
+    s.value = Math.floor(audio.currentTime);
+    s.style.setProperty('--p', (d ? Math.min(100, audio.currentTime / d * 100) : 0).toFixed(2) + '%');
+  }
+  if ('mediaSession' in navigator && d && navigator.mediaSession.setPositionState) {
+    try { navigator.mediaSession.setPositionState({ duration: d, playbackRate: audio.playbackRate, position: Math.min(audio.currentTime, d) }); } catch (e) {}
+  }
+}
+function drawPlay() { $('#play').innerHTML = audio.paused ? I.playSolid : I.pauseSolid; }
+async function savePos(force) {
+  if (!cur) return;
+  const now = Date.now();
+  if (!force && now - lastSave < 5000) return;
+  lastSave = now;
+  cur.lastPos = audio.currentTime;
+  try { await idb.put('episodes', cur); } catch (e) {}
+}
+function skip(s) { audio.currentTime = Math.max(0, Math.min((audio.duration || 1e9), audio.currentTime + s)); }
+$('#play').onclick = () => { if (audio.paused) audio.play().catch(() => say('#msg', 'Playback did not start. Tap play again.')); else audio.pause(); };
+$('#b15').onclick = () => skip(-15);
+$('#f30').onclick = () => skip(30);
+$('#seek').oninput = e => { seeking = true; $('#tcur').textContent = fmt(+e.target.value); e.target.style.setProperty('--p', (+e.target.value / +e.target.max * 100).toFixed(2) + '%'); };
+$('#seek').onchange = e => { audio.currentTime = +e.target.value; seeking = false; drawTime(); };
+$('#speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; audio.playbackRate = speed; $('#speed').innerHTML = speed + '&times;'; };
+$('#back').onclick = showLibrary;
+$('#remove').onclick = async () => {
+  if (!cur || !confirm('Remove this episode and its notes from the app?')) return;
+  for (const n of notes) await idb.del('notes', n.id);
+  await idb.del('renders', cur.id);
+  await idb.del('renders', cur.id + ':notes');
+  await idb.del('renders', cur.id + ':times');
+  await idb.del('episodes', cur.id);
+  showLibrary();
+};
+
+function setSession() {
+  if (!('mediaSession' in navigator)) return;
+  const ms = navigator.mediaSession;
+  const p = splitName(cur.name);
+  ms.metadata = new MediaMetadata({ title: p.title, artist: p.show || 'Podcast Notes' });
+  const h = [['play', () => audio.play()], ['pause', () => audio.pause()], ['seekbackward', d => skip(-(d.seekOffset || 15))],
+    ['seekforward', d => skip(d.seekOffset || 30)], ['seekto', d => { if (d.seekTime != null) audio.currentTime = d.seekTime; }]];
+  for (const [a, f] of h) { try { ms.setActionHandler(a, f); } catch (e) {} }
+}
+
+/* ---------- recording ---------- */
+function pickMime() {
+  const c = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', ''];
+  return c.find(m => m === '' || (window.MediaRecorder && MediaRecorder.isTypeSupported(m)));
+}
+function drawBig() {
+  $('#big').classList.toggle('rec', !!rec);
+  $('#player').classList.toggle('recording', !!rec);
+  $('#recstate').classList.toggle('hidden', !rec);
+  $('#remove').classList.toggle('hidden', !!rec);
+  if (rec) { $('#bigt').textContent = fmt((performance.now() - rec.startedAt) / 1000); $('#bigs').textContent = 'tap to stop'; }
+  else { $('#bigt').textContent = 'Note'; $('#bigs').textContent = 'tap to record'; }
+}
+async function startRecord() {
+  if (!cur || rec) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) { say('#msg', 'This browser cannot record. Use Chrome.'); return; }
+  $('#big').classList.add('busy');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: settings.ec, noiseSuppression: true, autoGainControl: true } });
+  } catch (err) {
+    $('#big').classList.remove('busy');
+    say('#msg', 'The microphone is blocked. Allow the microphone for this page in Chrome, then tap again.');
+    return;
+  }
+  $('#big').classList.remove('busy');
+  const mime = pickMime();
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+  const chunks = [];
+  mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec = { mr, chunks, stream, startPos: audio.currentTime, startedAt: performance.now(), timer: setInterval(drawBig, 250) };
+  try { audio.volume = DUCK_LIVE; } catch (e) {}
+  mr.start(250);
+  say('#msg', '');
+  drawBig();
+  drawNotes();
+}
+function stopRecord() {
+  const r = rec;
+  if (!r) return Promise.resolve();
+  rec = null;
+  clearInterval(r.timer);
+  return new Promise(res => {
+    r.mr.onstop = async () => {
+      r.stream.getTracks().forEach(t => t.stop());
+      try { audio.volume = 1; } catch (e) {}
+      const dur = (performance.now() - r.startedAt) / 1000;
+      const blob = new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' });
+      if (dur < 0.6 || !blob.size) { say('#msg', 'That was too short to keep. Tap, talk, then tap again.'); }
+      else if (cur) {
+        const note = { id: uid(), episodeId: cur.id, pos: r.startPos, dur, blob, createdAt: Date.now() };
+        await idb.put('notes', note);
+        notes.push(note);
+        notes.sort((a, b) => a.pos - b.pos);
+      }
+      drawBig();
+      drawNotes();
+      drawFiles();
+      res();
+    };
+    try { r.mr.stop(); } catch (e) { r.mr.onstop(); }
+  });
+}
+$('#big').onclick = () => { if (rec) stopRecord(); else startRecord(); };
+$('#mic').onclick = () => {
+  settings.ec = !settings.ec;
+  localStorage.setItem('pn-ec', settings.ec ? '1' : '0');
+  drawMic();
+};
+function drawMic() { $('#mic').textContent = settings.ec ? 'Mic: phone speaker (echo cancel on)' : 'Mic: earbuds'; }
+drawMic();
+
+/* ---------- notes list ---------- */
+function iconButton(icon, label) { const b = document.createElement('button'); b.className = 'ic'; b.innerHTML = icon; b.setAttribute('aria-label', label); return b; }
+function drawNotes() {
+  const box = $('#notes');
+  box.innerHTML = '';
+  $('#nonotes').classList.toggle('hidden', notes.length > 0 || !!rec);
+  $('#notecount').textContent = notes.length ? String(notes.length) : '';
+  const rows = notes.slice();
+  if (rec) rows.push({ live: true, pos: rec.startPos });
+  rows.sort((a, b) => a.pos - b.pos);
+  for (const n of rows) {
+    const row = document.createElement('div');
+    row.className = 'note' + (n.live ? ' now' : '');
+    const at = document.createElement('button');
+    at.className = 'at';
+    at.textContent = fmt(n.pos);
+    at.onclick = () => { if (!n.live) audio.currentTime = Math.max(0, n.pos - 3); };
+    const len = document.createElement('span');
+    len.className = 'len';
+    len.textContent = n.live ? 'now' : fmt(n.dur);
+    const sp = document.createElement('span');
+    sp.className = 'sp';
+    row.append(at, len, sp);
+    if (!n.live) {
+      const p = iconButton(I.play, 'Play this note');
+      p.onclick = () => previewNote(n, p);
+      const s = iconButton(I.save, 'Save this note');
+      s.onclick = async () => {
+        if (!window.lamejs) { say('#msg', 'The MP3 encoder did not load. Connect to the internet once, reload this page, and try again.'); return; }
+        s.disabled = true;
+        try {
+          const blob = await encodeMono([await decodeNote(n, 44100)], 44100, 0);
+          saveBlob(blob, cur.name + ' note at ' + fmt(n.pos).replace(/:/g, 'm') + 's.mp3');
+        } catch (e) { say('#msg', 'That note could not be saved.'); }
+        s.disabled = false;
+      };
+      const d = iconButton(I.trash, 'Delete this note');
+      d.onclick = async () => {
+        if (!confirm('Delete the note at ' + fmt(n.pos) + '?')) return;
+        await idb.del('notes', n.id);
+        notes = notes.filter(x => x.id !== n.id);
+        drawNotes();
+        drawFiles();
+      };
+      row.append(p, s, d);
+    }
+    box.appendChild(row);
+  }
+}
+function previewNote(n, btn) {
+  if (preview) { preview.a.pause(); preview.btn.classList.remove('on'); preview.btn.innerHTML = I.play; const same = preview.n === n; preview = null; if (same) return; }
+  const wasPlaying = !audio.paused;
+  audio.pause();
+  const a = new Audio(URL.createObjectURL(n.blob));
+  preview = { a, btn, n };
+  btn.classList.add('on');
+  btn.innerHTML = I.stop;
+  a.onended = a.onerror = () => { btn.classList.remove('on'); btn.innerHTML = I.play; URL.revokeObjectURL(a.src); if (preview && preview.a === a) preview = null; if (wasPlaying) audio.play().catch(() => {}); };
+  a.play().catch(() => say('#msg', 'That note did not play.'));
+}
+
+/* ---------- files ---------- */
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+async function shareBlob(blob, name) {
+  const f = new File([blob], name, { type: /\.txt$/i.test(name) ? 'text/plain' : 'audio/mpeg' });
+  if (!navigator.canShare || !navigator.canShare({ files: [f] })) { say('#msg', 'Sharing files is not available here. Use Save.'); return; }
+  try { await navigator.share({ files: [f], title: name }); } catch (e) {}
+}
+function drawFiles() {
+  $('#render').disabled = notes.length === 0;
+  const all = [render, render2, render3].filter(Boolean);
+  $('#files').classList.toggle('hidden', !all.length);
+  if (!all.length) return;
+  const stale = all.some(r => notes.some(n => n.createdAt > r.createdAt) || notes.length !== r.noteCount);
+  $('#stale').classList.toggle('hidden', !stale);
+  $('#filesmeta').textContent = render ? (render.noteCount === 1 ? '1 note' : render.noteCount + ' notes') : '';
+  const canShare = !inViewer && !!(navigator.share && navigator.canShare);
+  const kinds = [
+    { r: render, tile: 'ink', icon: I.wave, k: 'Episode with your notes in it' },
+    { r: render2, tile: 'red', icon: I.mic, k: 'Your notes alone' },
+    { r: render3, tile: 'tone', icon: I.doc, k: 'The times of your notes' },
+  ];
+  const list = $('#filelist');
+  list.innerHTML = '';
+  for (const x of kinds) {
+    if (!x.r) continue;
+    const row = document.createElement('div');
+    row.className = 'file';
+    const meta = (x.r.seconds ? fmt(x.r.seconds) + ' · ' : (/\.txt$/.test(x.r.name) ? 'text · ' : '')) + mb(x.r.blob.size);
+    row.innerHTML = '<div class="tile ' + x.tile + '">' + x.icon + '</div><div class="tx"><div class="k"></div><div class="m"></div></div>';
+    row.querySelector('.k').textContent = x.k;
+    row.querySelector('.m').textContent = meta;
+    if (!inViewer) {
+      const s = iconButton(I.save, 'Save ' + x.r.name);
+      s.onclick = () => saveBlob(x.r.blob, x.r.name);
+      row.appendChild(s);
+      if (canShare) { const sh = iconButton(I.share, 'Share ' + x.r.name); sh.onclick = () => shareBlob(x.r.blob, x.r.name); row.appendChild(sh); }
+    }
+    list.appendChild(row);
+  }
+  $('#filehint').classList.toggle('hidden', inViewer);
+  $('#viewernote').classList.toggle('hidden', !inViewer);
+  $('#saveall').classList.toggle('hidden', inViewer || all.length < 2);
+}
+$('#saveall').onclick = async () => {
+  for (const r of [render, render2, render3]) { if (r) { saveBlob(r.blob, r.name); await sleep(600); } }
+};
+
+/* your voice alone: every note back to back, one second apart */
+async function notesOnlyFile(list) {
+  const parts = [];
+  for (const n of list) { try { parts.push(await decodeNote(n, 44100)); } catch (e) {} }
+  if (!parts.length) throw new Error('None of the notes could be read.');
+  const seconds = parts.reduce((a, p) => a + p.length, 0) / 44100 + (parts.length - 1);
+  return { blob: await encodeMono(parts, 44100, 1), seconds };
+}
+/* the times: where each note sits in the episode, and how long it runs */
+function timesFile(ep, list) {
+  const lines = [ep.name, 'Notes, with the time in the episode where each one was said', ''];
+  list.forEach((n, i) => lines.push((i + 1) + '. ' + fmt(n.pos) + '   ' + fmt(n.dur) + ' long'));
+  return new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/plain' });
+}
+function monoOf(ab) {
+  const L = ab.length, s = new Float32Array(L);
+  for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < L; i++) s[i] += d[i] / ab.numberOfChannels; }
+  let peak = 0;
+  for (let i = 0; i < L; i++) { const a = Math.abs(s[i]); if (a > peak) peak = a; }
+  if (peak > 0.001) { const g = VOICE_PEAK / peak; for (let i = 0; i < L; i++) s[i] *= g; }
+  return s;
+}
+async function decodeNote(n, sr) {
+  const ctx = new OfflineAudioContext(1, 1, sr);
+  return monoOf(await ctx.decodeAudioData(await n.blob.arrayBuffer()));
+}
+async function encodeMono(parts, sr, gapSec) {
+  const enc = new lamejs.Mp3Encoder(1, sr, 96), out = [], STEP = 1152 * 16;
+  const push = i16 => { for (let i = 0; i < i16.length; i += STEP) { const d = enc.encodeBuffer(i16.subarray(i, Math.min(i16.length, i + STEP))); if (d.length) out.push(new Uint8Array(d)); } };
+  const gap = new Int16Array(Math.round(gapSec * sr));
+  for (let k = 0; k < parts.length; k++) {
+    const f = parts[k], o = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) { let x = f[i]; if (x > 1) x = 1; else if (x < -1) x = -1; o[i] = x < 0 ? x * 32768 : x * 32767; }
+    push(o);
+    if (k < parts.length - 1 && gap.length) push(gap);
+    await sleep(0);
+  }
+  const tail = enc.flush();
+  if (tail.length) out.push(new Uint8Array(tail));
+  return new Blob(out, { type: 'audio/mpeg' });
+}
+
+let wake = null;
+function renderProgress(p, text) {
+  const b = $('#render');
+  b.style.setProperty('--p', (p * 100).toFixed(1) + '%');
+  $('#rendertext').textContent = text + (p > 0 && p < 1 ? ' · ' + Math.round(p * 100) + '%' : '');
+}
+$('#render').onclick = async () => {
+  if (!cur || !notes.length) return;
+  if (rec) await stopRecord();
+  if (!window.lamejs) { say('#msg', 'The MP3 encoder did not load. Connect to the internet once, reload this page, and try again.'); return; }
+  const ep = cur, btn = $('#render');
+  btn.disabled = true;
+  btn.classList.add('busy');
+  say('#msg', '');
+  try { if (navigator.wakeLock) wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+  try {
+    const list = notes.slice();
+    const out = await renderEpisode(ep, list, renderProgress);
+    render = { episodeId: ep.id, blob: out.blob, seconds: out.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' with notes.mp3' };
+    await idb.put('renders', render);
+    renderProgress(1, 'Making the file of just your notes');
+    const nf = await notesOnlyFile(list);
+    render2 = { episodeId: ep.id + ':notes', blob: nf.blob, seconds: nf.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' notes only.mp3' };
+    await idb.put('renders', render2);
+    render3 = { episodeId: ep.id + ':times', blob: timesFile(ep, list), createdAt: Date.now(), noteCount: list.length, name: ep.name + ' note times.txt' };
+    await idb.put('renders', render3);
+  } catch (err) {
+    console.error(err);
+    say('#msg', 'The files could not be made. ' + (err && err.message ? err.message : ''));
+  } finally {
+    try { if (wake) { await wake.release(); wake = null; } } catch (e) {}
+    btn.classList.remove('busy');
+    btn.style.removeProperty('--p');
+    $('#rendertext').textContent = 'Make the files';
+    btn.disabled = false;
+    if (cur === ep) { drawFiles(); $('#files').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
+};
+
+/* MP3 frame map: where every frame starts, how long it is, how many samples it holds. */
+function mapMp3(buf) {
+  const b = new Uint8Array(buf);
+  const V1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+  const V2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+  const RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+  function hdr(p) {
+    if (p + 4 > b.length || b[p] !== 0xFF || (b[p + 1] & 0xE0) !== 0xE0) return null;
+    const ver = (b[p + 1] >> 3) & 3, layer = (b[p + 1] >> 1) & 3, bi = b[p + 2] >> 4, ri = (b[p + 2] >> 2) & 3, pad = (b[p + 2] >> 1) & 1, mode = b[p + 3] >> 6;
+    if (ver === 1 || layer !== 1 || bi === 0 || bi === 15 || ri === 3) return null;
+    const rate = RATES[ver][ri], kb = ver === 3 ? V1[bi] : V2[bi];
+    const len = (ver === 3 ? Math.floor(144000 * kb / rate) : Math.floor(72000 * kb / rate)) + pad;
+    return { len, rate, spf: ver === 3 ? 1152 : 576, ch: mode === 3 ? 1 : 2, side: ver === 3 ? (mode === 3 ? 17 : 32) : (mode === 3 ? 9 : 17) };
+  }
+  let p = 0;
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) {
+    p = 10 + ((b[6] & 0x7f) << 21 | (b[7] & 0x7f) << 14 | (b[8] & 0x7f) << 7 | (b[9] & 0x7f)) + ((b[5] & 0x10) ? 10 : 0);
+  }
+  const off = [], len = [];
+  let rate = 0, spf = 0, ch = 0, first = true;
+  while (p + 4 <= b.length) {
+    const h = hdr(p);
+    if (!h) { p++; continue; }
+    if (p + h.len > b.length) break;
+    if (!rate) {
+      const nx = hdr(p + h.len);
+      if (!nx && p + h.len + 4 <= b.length) { p++; continue; }
+      rate = h.rate; spf = h.spf; ch = h.ch;
+    }
+    if (first) {
+      first = false;
+      const q = p + 4 + h.side, tag = String.fromCharCode(b[q], b[q + 1], b[q + 2], b[q + 3]);
+      if (tag === 'Xing' || tag === 'Info') { p += h.len; continue; }
+    }
+    off.push(p); len.push(h.len);
+    p += h.len;
+  }
+  if (!off.length) throw new Error('No MP3 audio was found in this file.');
+  return { off, len, rate, spf, ch };
+}
+
+async function renderEpisode(ep, noteList, onProgress) {
+  onProgress(0, 'Reading the episode');
+  const buf = await ep.file.arrayBuffer();
+  const map = mapMp3(buf);
+  const sr = map.rate, spf = map.spf, nFrames = map.off.length;
+  const epSamples = nFrames * spf;
+  const ctx = new OfflineAudioContext(1, 1, sr);
+
+  onProgress(0, 'Reading your notes');
+  const vs = [];
+  for (const n of noteList) {
+    let s;
+    try { s = monoOf(await ctx.decodeAudioData(await n.blob.arrayBuffer())); } catch (e) { continue; }
+    vs.push({ start: Math.round(n.pos * sr), samples: s });
+  }
+  if (!vs.length) throw new Error('None of the notes could be read.');
+  const pre = Math.round(0.4 * sr), post = Math.round(0.7 * sr);
+  let total = epSamples;
+  for (const v of vs) total = Math.max(total, v.start + v.samples.length + post + Math.round(0.5 * sr));
+
+  let enc = null, channels = map.ch;
+  const out = [];
+  const chunkFrames = Math.max(1, Math.round(CHUNK_SEC * sr / spf));
+  const OVER = 8;
+  let done = 0, lastYield = performance.now();
+
+  async function pushChunk(chans, start, L) {
+    if (!enc) { channels = chans.length; enc = new lamejs.Mp3Encoder(channels, sr, channels === 1 ? 96 : 128); }
+    const gain = new Float32Array(L).fill(1), voice = new Float32Array(L);
+    for (const v of vs) {
+      const s = v.start, e = s + v.samples.length;
+      if (e + post <= start || s - pre >= start + L) continue;
+      for (let i = Math.max(start, s - pre), end = Math.min(start + L, e + post); i < end; i++) {
+        const g = i < s ? 1 - (1 - DUCK) * (i - (s - pre)) / pre : i < e ? DUCK : DUCK + (1 - DUCK) * (i - e) / post;
+        if (g < gain[i - start]) gain[i - start] = g;
+      }
+      for (let i = Math.max(start, s), end = Math.min(start + L, e); i < end; i++) voice[i - start] += v.samples[i - s];
+    }
+    const pcm = [];
+    for (let c = 0; c < channels; c++) {
+      const src = chans[Math.min(c, chans.length - 1)], o = new Int16Array(L);
+      for (let i = 0; i < L; i++) {
+        let x = src[i] * gain[i] + voice[i];
+        if (x > 1) x = 1; else if (x < -1) x = -1;
+        o[i] = x < 0 ? x * 32768 : x * 32767;
+      }
+      pcm.push(o);
+    }
+    const STEP = 1152 * 16;
+    for (let i = 0; i < L; i += STEP) {
+      const l = pcm[0].subarray(i, Math.min(L, i + STEP));
+      const d = channels === 1 ? enc.encodeBuffer(l) : enc.encodeBuffer(l, pcm[1].subarray(i, Math.min(L, i + STEP)));
+      if (d.length) out.push(new Uint8Array(d));
+      done += l.length;
+      if (performance.now() - lastYield > 60) { onProgress(done / total, 'Mixing and encoding'); await sleep(0); lastYield = performance.now(); }
+    }
+  }
+
+  for (let f = 0; f < nFrames; f += chunkFrames) {
+    const fe = Math.min(nFrames, f + chunkFrames), fs = Math.max(0, f - OVER), over = f - fs;
+    const slice = buf.slice(map.off[fs], map.off[fe - 1] + map.len[fe - 1]);
+    let ab;
+    try { ab = await ctx.decodeAudioData(slice); } catch (e) { throw new Error('A part of the episode could not be decoded.'); }
+    const want = (fe - f) * spf, expected = (fe - fs) * spf;
+    let front = over * spf + (ab.length - expected);
+    if (front < 0) front = 0;
+    const chans = [];
+    for (let c = 0; c < ab.numberOfChannels; c++) {
+      const d = ab.getChannelData(c), o = new Float32Array(want);
+      o.set(d.subarray(front, Math.min(d.length, front + want)));
+      chans.push(o);
+    }
+    await pushChunk(chans, f * spf, want);
+  }
+  for (let s = epSamples; s < total; ) {
+    const L = Math.min(total - s, chunkFrames * spf);
+    const chans = [];
+    for (let c = 0; c < channels; c++) chans.push(new Float32Array(L));
+    await pushChunk(chans, s, L);
+    s += L;
+  }
+  const tail = enc.flush();
+  if (tail.length) out.push(new Uint8Array(tail));
+  onProgress(1, 'Done');
+  return { blob: new Blob(out, { type: 'audio/mpeg' }), seconds: total / sr };
+}
+
+/* inside the Claude viewer: hand over the app file itself */
+function offerAppFile(dl) {
+  const src = document.getElementById('appsrc');
+  const b64 = src ? src.textContent.trim() : '';
+  if (!dl || !b64 || b64.charAt(0) === '_') return false;
+  $('#getapp').classList.remove('hidden');
+  $('#getappbtn').onclick = async () => {
+    const btn = $('#getappbtn');
+    btn.disabled = true;
+    try {
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      await dl.save({ filename: 'podcast-notes.html', data: bytes });
+      say('#libmsg', 'Saved. Now open file:///sdcard/Download/podcast-notes.html in Chrome.');
+    } catch (e) {
+      if (!e || e.code !== 'declined') say('#libmsg', 'The file could not be saved here. ' + (e && e.message ? e.message : ''));
+    }
+    btn.disabled = false;
+  };
+  return true;
+}
+if (inViewer) window.claude.use('downloads').then(offerAppFile).catch(() => {});
+
+window.__pn = { importFiles, renderEpisode, mapMp3, idb, openEpisode, showLibrary, offerAppFile, splitName, setChunk: s => { CHUNK_SEC = s; } };
+showLibrary();
+})();
+</script>

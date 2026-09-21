@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Library.dc.html", "x": 0, "y": 0, "w": 390, "h": 844, "title": "Episodes" },
+    { "file": "Main.dc.html", "x": 480, "y": 0, "w": 390, "h": 844, "title": "Player" },
+    { "file": "Recording.dc.html", "x": 960, "y": 0, "w": 390, "h": 844, "title": "Recording a note" },
+    { "file": "Files.dc.html", "x": 1440, "y": 0, "w": 390, "h": 844, "title": "Files ready" },
+    { "file": "DarkOption.dc.html", "x": 0, "y": 1040, "w": 390, "h": 844, "title": "Option B: dark, for night" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -150, "w": 420, "text": "Four screens in the house style: episodes grouped by show, the player with the big note button, the same screen while a note records, and the files once they are made.\nOption B below is a night look for the player only. Say the word and the app switches to it." }
+  ],
+  "launch": { "view": "canvas" }
+}
