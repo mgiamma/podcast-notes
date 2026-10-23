@@ -627,10 +627,10 @@ onmessage = async e => {
 let asrWorker = null, asrBusy = null, asrReady = false;
 const textQueue = [], textState = new Map();   // note id -> 'wait' | 'err'
 function sttSay(text) { $('#sttmsg').textContent = text || ''; $('#sttmsg').classList.toggle('hidden', !text); }
-function queueText(n) {
+function queueText(n, asked) {
   if (n.text != null || textState.get(n.id) === 'wait') return;
   textState.set(n.id, 'wait');
-  textQueue.push(n);
+  textQueue.push({ n, asked: !!asked });
   pumpText();
 }
 function getWorker() {
@@ -641,7 +641,7 @@ function getWorker() {
     if (m.type === 'progress') { if (!asrReady) sttSay('Getting the speech model. This happens once, about 80 MB. ' + Math.round(m.loaded / m.total * 100) + '%'); return; }
     if (m.type === 'ready') { asrReady = true; sttSay('Turning notes into text'); return; }
     const job = asrBusy;
-    if (!job || job.n.id !== m.id) return;
+    if (!job || !job.done || job.n.id !== m.id) return;
     asrBusy = null;
     job.done(m);
   };
@@ -650,23 +650,29 @@ function getWorker() {
     const job = asrBusy;
     asrBusy = null;
     asrWorker = null;
-    if (job) job.done({ type: 'error', message: 'The speech tool did not load. Check the internet connection.' });
+    if (job && job.done) job.done({ type: 'error', message: 'The speech tool did not load. Check the internet connection.' });
+    else if (job) asrBusy = job;
   };
   return asrWorker;
 }
 async function pumpText() {
   if (asrBusy || !textQueue.length) { if (!asrBusy && !textQueue.length) sttSay(''); return; }
-  const n = textQueue.shift();
-  if (n.text != null || !settings.stt) { textState.delete(n.id); drawNotes(); pumpText(); return; }
+  const { n, asked } = textQueue.shift();
+  if (n.text != null || !(settings.stt || asked)) { textState.delete(n.id); drawNotes(); pumpText(); return; }
+  asrBusy = { n, done: null };   // hold the slot while the note decodes
   let pcm;
-  try { pcm = await decodeNote(n, 16000); } catch (e) { textState.set(n.id, 'err'); drawNotes(); pumpText(); return; }
+  try { pcm = await decodeNote(n, 16000); } catch (e) { asrBusy = null; textState.set(n.id, 'err'); drawNotes(); pumpText(); return; }
   if (!asrReady) sttSay('Getting the speech model ready');
-  asrBusy = { n, done: async m => {
+  asrBusy.done = async m => {
     if (m.type === 'done') {
-      n.text = m.text || '(no words heard)';
-      n.updatedAt = Date.now();
+      const text = m.text || '(no words heard)', now = Date.now();
       textState.delete(n.id);
-      try { if (await idb.get('notes', n.id)) await idb.put('notes', n); } catch (e) {}
+      /* the episode may have been reopened since, so write into the stored note and the one on screen */
+      try {
+        const saved = await idb.get('notes', n.id);
+        if (saved && saved.text == null) { saved.text = text; saved.updatedAt = now; await idb.put('notes', saved); }
+      } catch (e) {}
+      for (const x of new Set([n, notes.find(y => y.id === n.id)])) if (x && x.text == null) { x.text = text; x.updatedAt = now; }
     } else {
       textState.set(n.id, 'err');
       say('#msg', 'A note could not be turned into text. ' + (m.message || ''));
@@ -674,7 +680,7 @@ async function pumpText() {
     drawNotes();
     drawFiles();
     pumpText();
-  } };
+  };
   try { getWorker().postMessage({ id: n.id, pcm }, [pcm.buffer]); }
   catch (e) { const job = asrBusy; asrBusy = null; job.done({ type: 'error', message: 'This browser cannot run the speech tool.' }); }
 }
@@ -753,8 +759,8 @@ function noteText(n) {
       drawFiles();
     };
   } else if (st === 'wait') { t.classList.add('wait'); t.textContent = 'Turning into text…'; }
-  else if (st === 'err') { t.classList.add('err'); t.textContent = 'Not turned into text. Tap to try again.'; t.onclick = () => { textState.delete(n.id); queueText(n); drawNotes(); }; }
-  else if (!settings.stt) { t.classList.add('err'); t.textContent = 'Turn into text'; t.onclick = () => { queueText(n); drawNotes(); }; }
+  else if (st === 'err') { t.classList.add('err'); t.textContent = 'Not turned into text. Tap to try again.'; t.onclick = () => { textState.delete(n.id); queueText(n, true); drawNotes(); }; }
+  else if (!settings.stt) { t.classList.add('err'); t.textContent = 'Turn into text'; t.onclick = () => { queueText(n, true); drawNotes(); }; }
   return t;
 }
 function noteTags(n) {
