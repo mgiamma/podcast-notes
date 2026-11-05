@@ -173,6 +173,25 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
 .note .ic.on { color:var(--accent); }
 .note.now .at, .note.now .len { color:var(--accent); }
 .nonotes { color:var(--muted); font-size:15px; margin:var(--s2) 0 0; }
+.nrow { padding:var(--s1) 0 var(--s3); border-bottom:1px solid var(--line); }
+.nrow:last-child { border-bottom:0; }
+.ntext { font-family:var(--serif); font-size:16px; line-height:1.4; color:var(--ink); margin:2px 0 var(--s2); outline:none; border-radius:6px; white-space:pre-wrap; }
+.ntext:focus { background:var(--paper-tone); box-shadow:0 0 0 6px var(--paper-tone); }
+.ntext.wait { color:var(--faint); font-family:var(--sans); font-size:13px; }
+.ntext.err { color:var(--accent); font-family:var(--sans); font-size:13px; cursor:pointer; }
+.tags { display:flex; gap:8px; flex-wrap:wrap; }
+.tags button { font-size:13px; font-weight:600; color:var(--soft); border:1px solid var(--line2); border-radius:999px; height:30px; padding:0 12px; }
+.tags button.on { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.tags button.on.cut { background:var(--accent); border-color:var(--accent); color:#faf8f3; }
+.editlist { display:flex; gap:var(--s3); margin-top:var(--s3); }
+.editlist .pill { height:44px; font-size:15px; }
+.speeds { display:flex; justify-content:space-between; gap:6px; margin-top:var(--s3); }
+.speeds button { flex:1; height:36px; border-radius:999px; border:1px solid var(--line2); font-size:14px; font-weight:600; color:var(--soft); font-variant-numeric:tabular-nums; }
+.speeds button.on { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.times button.open { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.backup { margin-top:var(--s6); padding-top:var(--s4); border-top:1px solid var(--line); }
+.backup .row { display:flex; gap:var(--s4); flex-wrap:wrap; }
+.backup .row button { font-size:14px; color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
 
 /* files */
 .file { display:flex; align-items:center; gap:14px; padding:var(--s3) 0; border-top:1px solid var(--line); }
@@ -207,7 +226,12 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
     <p>Name files like <b>Show name - Episode title.mp3</b> and the list groups them by show.</p>
   </div>
   <p id="libmsg" class="msg"></p>
+  <div class="backup">
+    <div class="row"><button id="backup">Save a backup</button><button id="restore">Restore a backup</button></div>
+    <p id="backupnote" class="hint"></p>
+  </div>
   <input id="file" type="file" accept="audio/mpeg,.mp3" multiple class="hidden">
+  <input id="restorefile" type="file" accept=".json,application/json" class="hidden">
 </div>
 <div class="bar"><button id="add" class="pill solid"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span>Add episodes</span></button></div>
 </div>
@@ -232,13 +256,19 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
   </div>
   <div class="seek">
     <input id="seek" type="range" min="0" max="100" step="1" value="0">
-    <div class="times"><span id="tcur">0:00</span><button id="speed">1&times;</button><span id="tdur">0:00</span></div>
+    <div class="times"><span id="tcur">0:00</span><button id="speed" aria-expanded="false">1&times;</button><span id="tdur">0:00</span></div>
+    <div id="speeds" class="speeds hidden"></div>
   </div>
   <p id="msg" class="msg"></p>
 
   <div class="sech"><span>Notes</span><span id="notecount"></span></div>
+  <p id="sttmsg" class="hint hidden"></p>
   <div id="notes"></div>
   <p id="nonotes" class="nonotes">None yet. Tap the big button while the episode plays.</p>
+  <div id="editlist" class="editlist hidden">
+    <button id="elsave" class="pill">Save edit list</button>
+    <button id="elshare" class="pill hidden">Share edit list</button>
+  </div>
 
   <div id="files" class="hidden">
     <div class="sech"><span>Files</span><span id="filesmeta"></span></div>
@@ -246,11 +276,12 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
     <div id="filelist"></div>
     <p class="hint" id="filehint">Saved files go to Downloads on this phone. Share sends one to Drive or another app.</p>
     <p id="viewernote" class="hint hidden">Saving does not work inside the Claude viewer. Open the app from the file on your phone to save or share these.</p>
-    <button id="saveall" class="pill" style="margin-top:var(--s3)">Save all three</button>
+    <button id="saveall" class="pill" style="margin-top:var(--s3)">Save all</button>
   </div>
 
   <div class="foot">
     <button id="mic">Mic: earbuds</button>
+    <button id="stt">Notes to text: on</button>
   </div>
 </div>
 <div class="bar"><button id="render" class="pill"><span id="rendertext">Make the files</span></button></div>
@@ -317,9 +348,11 @@ const idb = {
 const audio = new Audio();
 audio.preload = 'metadata';
 let cur = null, notes = [], render = null, render2 = null, render3 = null, objUrl = null, rec = null, preview = null, seeking = false, lastSave = 0, query = '';
-const SPEEDS = [1, 1.25, 1.5, 2, 0.8];
-let speed = 1;
-const settings = { ec: localStorage.getItem('pn-ec') === '1' };
+const SPEEDS = [0.8, 1, 1.1, 1.25, 1.5, 1.75, 2];
+let speed = +localStorage.getItem('pn-speed') || 1;
+if (!SPEEDS.includes(speed)) speed = 1;
+const settings = { ec: localStorage.getItem('pn-ec') === '1', stt: localStorage.getItem('pn-stt') !== '0' };
+const TAGS = [['cut', 'Cut'], ['keep', 'Keep'], ['fix', 'Fix audio'], ['clip', 'Clip']];
 function say(el, text) { $(el).textContent = text || ''; }
 
 /* the file name carries the show: "Show name - Episode title" */
@@ -415,7 +448,7 @@ async function openEpisode(ep) {
   if (objUrl) URL.revokeObjectURL(objUrl);
   objUrl = URL.createObjectURL(ep.file);
   audio.src = objUrl;
-  audio.playbackRate = speed;
+  setSpeed(speed);
   const p = splitName(ep.name);
   $('#showname').textContent = p.show || 'Episodes';
   $('#eptitle').textContent = p.title;
@@ -428,6 +461,7 @@ async function openEpisode(ep) {
   drawTime();
   drawPlay();
   setSession();
+  if (settings.stt) notes.forEach(n => { if (n.text == null) queueText(n); });
 }
 audio.addEventListener('loadedmetadata', async () => {
   if (!cur) return;
@@ -469,8 +503,36 @@ $('#play').onclick = () => { if (audio.paused) audio.play().catch(() => say('#ms
 $('#b15').onclick = () => skip(-15);
 $('#f30').onclick = () => skip(30);
 $('#seek').oninput = e => { seeking = true; $('#tcur').textContent = fmt(+e.target.value); e.target.style.setProperty('--p', (+e.target.value / +e.target.max * 100).toFixed(2) + '%'); };
-$('#seek').onchange = e => { audio.currentTime = +e.target.value; seeking = false; drawTime(); };
-$('#speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; audio.playbackRate = speed; $('#speed').innerHTML = speed + '&times;'; };
+$('#seek').onchange = e => { audio.currentTime = +e.target.value; seeking = false; drawTime(); savePos(true); };
+/* save the listening spot whenever the app is hidden or closed */
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') savePos(true); });
+window.addEventListener('pagehide', () => savePos(true));
+/* speed: tap the speed to see every choice, tap one to use it; the app remembers it */
+const xs = v => String(v).replace(/^0\./, '.') + '\u00d7';
+function setSpeed(v) {
+  speed = v;
+  localStorage.setItem('pn-speed', String(v));
+  audio.defaultPlaybackRate = v;   // survives loading the next episode
+  audio.playbackRate = v;
+  try { audio.preservesPitch = true; } catch (e) {}
+  $('#speed').textContent = xs(v);
+  for (const b of $('#speeds').children) b.classList.toggle('on', +b.dataset.v === v);
+  drawTime();
+}
+for (const v of SPEEDS) {
+  const b = document.createElement('button');
+  b.dataset.v = v;
+  b.textContent = xs(v);
+  b.onclick = () => { setSpeed(v); showSpeeds(false); };
+  $('#speeds').appendChild(b);
+}
+function showSpeeds(on) {
+  $('#speeds').classList.toggle('hidden', !on);
+  $('#speed').classList.toggle('open', on);
+  $('#speed').setAttribute('aria-expanded', on ? 'true' : 'false');
+}
+$('#speed').onclick = () => showSpeeds($('#speeds').classList.contains('hidden'));
+setSpeed(speed);
 $('#back').onclick = showLibrary;
 $('#remove').onclick = async () => {
   if (!cur || !confirm('Remove this episode and its notes from the app?')) return;
@@ -546,6 +608,7 @@ function stopRecord() {
         await idb.put('notes', note);
         notes.push(note);
         notes.sort((a, b) => a.pos - b.pos);
+        if (settings.stt) queueText(note);
       }
       drawBig();
       drawNotes();
@@ -563,20 +626,126 @@ $('#mic').onclick = () => {
 };
 function drawMic() { $('#mic').textContent = settings.ec ? 'Mic: phone speaker (echo cancel on)' : 'Mic: earbuds'; }
 drawMic();
+$('#stt').onclick = () => {
+  settings.stt = !settings.stt;
+  localStorage.setItem('pn-stt', settings.stt ? '1' : '0');
+  drawStt();
+  if (settings.stt) notes.forEach(n => { if (n.text == null) queueText(n); });
+  drawNotes();
+};
+function drawStt() { $('#stt').textContent = settings.stt ? 'Notes to text: on' : 'Notes to text: off'; }
+drawStt();
+
+/* ---------- notes to text ----------
+   Whisper runs on the phone in a worker. The model downloads once (about 80 MB),
+   then the browser keeps it, so later notes work offline. */
+const ASR_LIB = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js';
+const ASR_MODEL = 'Xenova/whisper-base.en';
+const ASR_WORKER = `
+import { pipeline, env } from '${ASR_LIB}';
+env.allowLocalModels = false;
+let asr = null;
+const files = {};
+function load() {
+  if (!asr) asr = pipeline('automatic-speech-recognition', '${ASR_MODEL}', { dtype: 'q8', device: 'wasm',
+    progress_callback: p => {
+      if (p.status !== 'progress' || !p.total) return;
+      files[p.file] = [p.loaded, p.total];
+      let l = 0, t = 0;
+      for (const k in files) { l += files[k][0]; t += files[k][1]; }
+      postMessage({ type: 'progress', loaded: l, total: t });
+    } }).catch(e => { asr = null; throw e; });
+  return asr;
+}
+onmessage = async e => {
+  const { id, pcm } = e.data;
+  try {
+    const run = await load();
+    postMessage({ type: 'ready' });
+    const r = await run(pcm, { chunk_length_s: 30, stride_length_s: 5 });
+    postMessage({ type: 'done', id, text: String(r.text || '').trim() });
+  } catch (err) { postMessage({ type: 'error', id, message: String(err && err.message || err) }); }
+};`;
+let asrWorker = null, asrBusy = null, asrReady = false;
+const textQueue = [], textState = new Map();   // note id -> 'wait' | 'err'
+function sttSay(text) { $('#sttmsg').textContent = text || ''; $('#sttmsg').classList.toggle('hidden', !text); }
+function queueText(n, asked) {
+  if (n.text != null || textState.get(n.id) === 'wait') return;
+  textState.set(n.id, 'wait');
+  textQueue.push({ n, asked: !!asked });
+  pumpText();
+}
+function getWorker() {
+  if (asrWorker) return asrWorker;
+  asrWorker = new Worker(URL.createObjectURL(new Blob([ASR_WORKER], { type: 'text/javascript' })), { type: 'module' });
+  asrWorker.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'progress') { if (!asrReady) sttSay('Getting the speech model. This happens once, about 80 MB. ' + Math.round(m.loaded / m.total * 100) + '%'); return; }
+    if (m.type === 'ready') { asrReady = true; sttSay('Turning notes into text'); return; }
+    const job = asrBusy;
+    if (!job || !job.done || job.n.id !== m.id) return;
+    asrBusy = null;
+    job.done(m);
+  };
+  asrWorker.onerror = e => {
+    e.preventDefault();
+    const job = asrBusy;
+    asrBusy = null;
+    asrWorker = null;
+    if (job && job.done) job.done({ type: 'error', message: 'The speech tool did not load. Check the internet connection.' });
+    else if (job) asrBusy = job;
+  };
+  return asrWorker;
+}
+async function pumpText() {
+  if (asrBusy || !textQueue.length) { if (!asrBusy && !textQueue.length) sttSay(''); return; }
+  const { n, asked } = textQueue.shift();
+  if (n.text != null || !(settings.stt || asked)) { textState.delete(n.id); drawNotes(); pumpText(); return; }
+  asrBusy = { n, done: null };   // hold the slot while the note decodes
+  let pcm;
+  try { pcm = await decodeNote(n, 16000); } catch (e) { asrBusy = null; textState.set(n.id, 'err'); drawNotes(); pumpText(); return; }
+  if (!asrReady) sttSay('Getting the speech model ready');
+  asrBusy.done = async m => {
+    if (m.type === 'done') {
+      const text = m.text || '(no words heard)', now = Date.now();
+      textState.delete(n.id);
+      /* the episode may have been reopened since, so write into the stored note and the one on screen */
+      try {
+        const saved = await idb.get('notes', n.id);
+        if (saved && saved.text == null) { saved.text = text; saved.updatedAt = now; await idb.put('notes', saved); }
+      } catch (e) {}
+      for (const x of new Set([n, notes.find(y => y.id === n.id)])) if (x && x.text == null) { x.text = text; x.updatedAt = now; }
+    } else {
+      textState.set(n.id, 'err');
+      say('#msg', 'A note could not be turned into text. ' + (m.message || ''));
+    }
+    drawNotes();
+    drawFiles();
+    pumpText();
+  };
+  try { getWorker().postMessage({ id: n.id, pcm }, [pcm.buffer]); }
+  catch (e) { const job = asrBusy; asrBusy = null; job.done({ type: 'error', message: 'This browser cannot run the speech tool.' }); }
+}
 
 /* ---------- notes list ---------- */
 function iconButton(icon, label) { const b = document.createElement('button'); b.className = 'ic'; b.innerHTML = icon; b.setAttribute('aria-label', label); return b; }
 function drawNotes() {
   const box = $('#notes');
+  if (box.contains(document.activeElement)) document.activeElement.blur();
   box.innerHTML = '';
   $('#nonotes').classList.toggle('hidden', notes.length > 0 || !!rec);
   $('#notecount').textContent = notes.length ? String(notes.length) : '';
   const rows = notes.slice();
   if (rec) rows.push({ live: true, pos: rec.startPos });
   rows.sort((a, b) => a.pos - b.pos);
+  $('#editlist').classList.toggle('hidden', !notes.length);
+  $('#elshare').classList.toggle('hidden', inViewer || !(navigator.share && navigator.canShare));
   for (const n of rows) {
+    const wrap = document.createElement('div');
+    wrap.className = 'nrow';
     const row = document.createElement('div');
     row.className = 'note' + (n.live ? ' now' : '');
+    wrap.appendChild(row);
     const at = document.createElement('button');
     at.className = 'at';
     at.textContent = fmt(n.pos);
@@ -596,7 +765,7 @@ function drawNotes() {
         s.disabled = true;
         try {
           const blob = await encodeMono([await decodeNote(n, 44100)], 44100, 0);
-          saveBlob(blob, cur.name + ' note at ' + fmt(n.pos).replace(/:/g, 'm') + 's.mp3');
+          saveBlob(blob, cur.name + ' - note at ' + fmt(n.pos).replace(/:/g, '.') + '.mp3');
         } catch (e) { say('#msg', 'That note could not be saved.'); }
         s.disabled = false;
       };
@@ -609,10 +778,54 @@ function drawNotes() {
         drawFiles();
       };
       row.append(p, s, d);
+      wrap.append(noteText(n), noteTags(n));
     }
-    box.appendChild(row);
+    box.appendChild(wrap);
   }
 }
+/* what was said: tap to fix a word */
+function noteText(n) {
+  const t = document.createElement('div');
+  t.className = 'ntext';
+  const st = textState.get(n.id);
+  if (n.text != null) {
+    t.textContent = n.text;
+    t.setAttribute('contenteditable', 'plaintext-only');
+    t.setAttribute('aria-label', 'Note text. Tap to fix.');
+    t.onblur = async () => {
+      const v = t.textContent.trim();
+      if (v === n.text) return;
+      n.text = v;
+      n.updatedAt = Date.now();
+      await idb.put('notes', n);
+      drawFiles();
+    };
+  } else if (st === 'wait') { t.classList.add('wait'); t.textContent = 'Turning into text…'; }
+  else if (st === 'err') { t.classList.add('err'); t.textContent = 'Not turned into text. Tap to try again.'; t.onclick = () => { textState.delete(n.id); queueText(n, true); drawNotes(); }; }
+  else if (!settings.stt) { t.classList.add('err'); t.textContent = 'Turn into text'; t.onclick = () => { queueText(n, true); drawNotes(); }; }
+  return t;
+}
+function noteTags(n) {
+  const box = document.createElement('div');
+  box.className = 'tags';
+  for (const [k, label] of TAGS) {
+    const b = document.createElement('button');
+    b.className = k + (n.tag === k ? ' on' : '');
+    b.textContent = label;
+    b.setAttribute('aria-pressed', n.tag === k ? 'true' : 'false');
+    b.onclick = async () => {
+      n.tag = n.tag === k ? null : k;
+      n.updatedAt = Date.now();
+      await idb.put('notes', n);
+      box.replaceWith(noteTags(n));
+      drawFiles();
+    };
+    box.appendChild(b);
+  }
+  return box;
+}
+$('#elsave').onclick = () => { if (cur && notes.length) saveBlob(editListFile(cur, notes), cur.name + ' - edit list.txt'); };
+$('#elshare').onclick = () => { if (cur && notes.length) shareBlob(editListFile(cur, notes), cur.name + ' - edit list.txt'); };
 function previewNote(n, btn) {
   if (preview) { preview.a.pause(); preview.btn.classList.remove('on'); preview.btn.innerHTML = I.play; const same = preview.n === n; preview = null; if (same) return; }
   const wasPlaying = !audio.paused;
@@ -644,14 +857,14 @@ function drawFiles() {
   const all = [render, render2, render3].filter(Boolean);
   $('#files').classList.toggle('hidden', !all.length);
   if (!all.length) return;
-  const stale = all.some(r => notes.some(n => n.createdAt > r.createdAt) || notes.length !== r.noteCount);
+  const stale = all.some(r => notes.some(n => n.createdAt > r.createdAt || (r === render3 && n.updatedAt > r.createdAt)) || notes.length !== r.noteCount);
   $('#stale').classList.toggle('hidden', !stale);
   $('#filesmeta').textContent = render ? (render.noteCount === 1 ? '1 note' : render.noteCount + ' notes') : '';
   const canShare = !inViewer && !!(navigator.share && navigator.canShare);
   const kinds = [
-    { r: render, tile: 'ink', icon: I.wave, k: 'Episode with your notes in it' },
-    { r: render2, tile: 'red', icon: I.mic, k: 'Your notes alone' },
-    { r: render3, tile: 'tone', icon: I.doc, k: 'The times of your notes' },
+    { r: render, tile: 'ink', icon: I.wave, k: 'Episode with notes' },
+    { r: render2, tile: 'red', icon: I.mic, k: 'Notes only' },
+    { r: render3, tile: 'tone', icon: I.doc, k: 'Edit list' },
   ];
   const list = $('#filelist');
   list.innerHTML = '';
@@ -687,11 +900,16 @@ async function notesOnlyFile(list) {
   const seconds = parts.reduce((a, p) => a + p.length, 0) / 44100 + (parts.length - 1);
   return { blob: await encodeMono(parts, 44100, 1), seconds };
 }
-/* the times: where each note sits in the episode, and how long it runs */
-function timesFile(ep, list) {
-  const lines = [ep.name, 'Notes, with the time in the episode where each one was said', ''];
-  list.forEach((n, i) => lines.push((i + 1) + '. ' + fmt(n.pos) + '   ' + fmt(n.dur) + ' long'));
-  return new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/plain' });
+/* the edit list: where each note sits in the episode, its tag, and what was said */
+function editListFile(ep, list) {
+  const lines = [ep.name, 'Edit list: ' + (list.length === 1 ? '1 note' : list.length + ' notes') + ', with the time in the episode where each one was said', ''];
+  list.forEach((n, i) => {
+    const tag = TAGS.find(t => t[0] === n.tag);
+    lines.push((i + 1) + '. ' + fmt(n.pos) + '   ' + (tag ? tag[1].toUpperCase() : 'NOTE') + '   (' + fmt(n.dur) + ' long)');
+    if (n.text) lines.push('   ' + n.text.replace(/\s*\n\s*/g, ' '));
+    lines.push('');
+  });
+  return new Blob([lines.join('\r\n')], { type: 'text/plain' });
 }
 function monoOf(ab) {
   const L = ab.length, s = new Float32Array(L);
@@ -739,13 +957,13 @@ $('#render').onclick = async () => {
   try {
     const list = notes.slice();
     const out = await renderEpisode(ep, list, renderProgress);
-    render = { episodeId: ep.id, blob: out.blob, seconds: out.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' with notes.mp3' };
+    render = { episodeId: ep.id, blob: out.blob, seconds: out.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - with notes.mp3' };
     await idb.put('renders', render);
     renderProgress(1, 'Making the file of just your notes');
     const nf = await notesOnlyFile(list);
-    render2 = { episodeId: ep.id + ':notes', blob: nf.blob, seconds: nf.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' notes only.mp3' };
+    render2 = { episodeId: ep.id + ':notes', blob: nf.blob, seconds: nf.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - notes only.mp3' };
     await idb.put('renders', render2);
-    render3 = { episodeId: ep.id + ':times', blob: timesFile(ep, list), createdAt: Date.now(), noteCount: list.length, name: ep.name + ' note times.txt' };
+    render3 = { episodeId: ep.id + ':times', blob: editListFile(ep, list), createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - edit list.txt' };
     await idb.put('renders', render3);
   } catch (err) {
     console.error(err);
@@ -910,6 +1128,87 @@ function offerAppFile(dl) {
   return true;
 }
 if (inViewer) window.claude.use('downloads').then(offerAppFile).catch(() => {});
+
+/* ---------- keeping everything safe ----------
+   Notes live in this browser. Ask the browser never to clear them, and offer a backup file
+   with every note (voice, text, tag) and every listening spot. Episodes are not in the file:
+   they are big and you already have the MP3s. */
+async function keepStorage() {
+  try { if (navigator.storage && navigator.storage.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); } catch (e) {}
+}
+async function drawBackupNote() {
+  const at = +localStorage.getItem('pn-backup-at') || 0;
+  let kept = false;
+  try { kept = !!(navigator.storage && navigator.storage.persisted && await navigator.storage.persisted()); } catch (e) {}
+  $('#backupnote').textContent = (at ? 'Last backup ' + new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + '. ' : 'No backup yet. ')
+    + (kept ? 'This phone will not clear your notes on its own.' : 'Save a backup now and then. It goes to Downloads.');
+}
+const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+function fromB64(b64, type) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type }); }
+$('#backup').onclick = async () => {
+  if (rec) await stopRecord();
+  const btn = $('#backup');
+  btn.disabled = true;
+  say('#libmsg', 'Making the backup');
+  try {
+    const eps = await idb.all('episodes'), all = await idb.all('notes');
+    const byId = new Map(eps.map(e => [e.id, e]));
+    const out = { app: 'podcast-notes', version: 1, savedAt: new Date().toISOString(),
+      episodes: eps.map(e => ({ name: e.name, lastPos: e.lastPos || 0, duration: e.duration || 0 })), notes: [] };
+    for (const n of all) {
+      const ep = byId.get(n.episodeId);
+      if (!ep) continue;
+      out.notes.push({ id: n.id, episode: ep.name, pos: n.pos, dur: n.dur, createdAt: n.createdAt, updatedAt: n.updatedAt || null,
+        tag: n.tag || null, text: n.text == null ? null : n.text, type: n.blob.type, audio: await toB64(n.blob) });
+    }
+    const d = new Date(), stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    saveBlob(new Blob([JSON.stringify(out)], { type: 'application/json' }), 'Podcast Notes backup ' + stamp + '.json');
+    localStorage.setItem('pn-backup-at', String(Date.now()));
+    say('#libmsg', 'Backup saved: ' + (out.notes.length === 1 ? '1 note' : out.notes.length + ' notes') + '.');
+  } catch (e) { say('#libmsg', 'The backup could not be made. ' + (e && e.message ? e.message : '')); }
+  btn.disabled = false;
+  drawBackupNote();
+};
+$('#restore').onclick = () => $('#restorefile').click();
+$('#restorefile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try { await restoreBackup(JSON.parse(await f.text())); }
+  catch (err) { say('#libmsg', 'That file is not a Podcast Notes backup.'); }
+};
+async function restoreBackup(b) {
+  if (!b || b.app !== 'podcast-notes' || !Array.isArray(b.notes)) throw new Error('not a backup');
+  const eps = await idb.all('episodes'), byName = new Map(eps.map(x => [x.name, x]));
+  let added = 0, kept = 0, waiting = 0;
+  for (const x of b.episodes || []) {
+    const ep = byName.get(x.name);
+    if (ep && !(ep.lastPos > 0) && x.lastPos > 0) { ep.lastPos = x.lastPos; await idb.put('episodes', ep); }
+  }
+  for (const x of b.notes) {
+    const ep = byName.get(x.episode);
+    if (!ep) { waiting++; continue; }
+    const have = await idb.get('notes', x.id);
+    if (have) {
+      /* keep what is on the phone, but fill in text or a tag it does not have yet */
+      let changed = false;
+      if (have.text == null && x.text != null) { have.text = x.text; changed = true; }
+      if (!have.tag && x.tag) { have.tag = x.tag; changed = true; }
+      if (changed) { have.updatedAt = Date.now(); await idb.put('notes', have); }
+      kept++;
+      continue;
+    }
+    await idb.put('notes', { id: x.id, episodeId: ep.id, pos: x.pos, dur: x.dur, createdAt: x.createdAt || Date.now(), updatedAt: x.updatedAt || undefined,
+      tag: x.tag || null, text: x.text == null ? undefined : x.text, blob: fromB64(x.audio, x.type || 'audio/webm') });
+    added++;
+  }
+  const parts = [added ? 'Restored ' + (added === 1 ? '1 note' : added + ' notes') + '.' : 'Nothing new to restore.'];
+  if (kept) parts.push(kept === 1 ? '1 note was already here.' : kept + ' notes were already here.');
+  if (waiting) parts.push(waiting + ' belong to episodes not in the app. Add those MP3s with the same names, then restore again.');
+  say('#libmsg', parts.join(' '));
+  await drawLibrary();
+}
+keepStorage().then(drawBackupNote);
 
 window.__pn = { importFiles, renderEpisode, mapMp3, idb, openEpisode, showLibrary, offerAppFile, splitName, setChunk: s => { CHUNK_SEC = s; } };
 showLibrary();
