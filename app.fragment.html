@@ -126,6 +126,13 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
 .tags button.on.cut { background:var(--accent); border-color:var(--accent); color:#faf8f3; }
 .editlist { display:flex; gap:var(--s3); margin-top:var(--s3); }
 .editlist .pill { height:44px; font-size:15px; }
+.speeds { display:flex; justify-content:space-between; gap:6px; margin-top:var(--s3); }
+.speeds button { flex:1; height:36px; border-radius:999px; border:1px solid var(--line2); font-size:14px; font-weight:600; color:var(--soft); font-variant-numeric:tabular-nums; }
+.speeds button.on { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.times button.open { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.backup { margin-top:var(--s6); padding-top:var(--s4); border-top:1px solid var(--line); }
+.backup .row { display:flex; gap:var(--s4); flex-wrap:wrap; }
+.backup .row button { font-size:14px; color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
 
 /* files */
 .file { display:flex; align-items:center; gap:14px; padding:var(--s3) 0; border-top:1px solid var(--line); }
@@ -160,7 +167,12 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
     <p>Name files like <b>Show name - Episode title.mp3</b> and the list groups them by show.</p>
   </div>
   <p id="libmsg" class="msg"></p>
+  <div class="backup">
+    <div class="row"><button id="backup">Save a backup</button><button id="restore">Restore a backup</button></div>
+    <p id="backupnote" class="hint"></p>
+  </div>
   <input id="file" type="file" accept="audio/mpeg,.mp3" multiple class="hidden">
+  <input id="restorefile" type="file" accept=".json,application/json" class="hidden">
 </div>
 <div class="bar"><button id="add" class="pill solid"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span>Add episodes</span></button></div>
 </div>
@@ -185,7 +197,8 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
   </div>
   <div class="seek">
     <input id="seek" type="range" min="0" max="100" step="1" value="0">
-    <div class="times"><span id="tcur">0:00</span><button id="speed">1&times;</button><span id="tdur">0:00</span></div>
+    <div class="times"><span id="tcur">0:00</span><button id="speed" aria-expanded="false">1&times;</button><span id="tdur">0:00</span></div>
+    <div id="speeds" class="speeds hidden"></div>
   </div>
   <p id="msg" class="msg"></p>
 
@@ -204,7 +217,7 @@ h1 { font-family:var(--sans); font-weight:800; letter-spacing:-.02em; line-heigh
     <div id="filelist"></div>
     <p class="hint" id="filehint">Saved files go to Downloads on this phone. Share sends one to Drive or another app.</p>
     <p id="viewernote" class="hint hidden">Saving does not work inside the Claude viewer. Open the app from the file on your phone to save or share these.</p>
-    <button id="saveall" class="pill" style="margin-top:var(--s3)">Save all three</button>
+    <button id="saveall" class="pill" style="margin-top:var(--s3)">Save all</button>
   </div>
 
   <div class="foot">
@@ -276,8 +289,9 @@ const idb = {
 const audio = new Audio();
 audio.preload = 'metadata';
 let cur = null, notes = [], render = null, render2 = null, render3 = null, objUrl = null, rec = null, preview = null, seeking = false, lastSave = 0, query = '';
-const SPEEDS = [1, 1.25, 1.5, 2, 0.8];
-let speed = 1;
+const SPEEDS = [0.8, 1, 1.1, 1.25, 1.5, 1.75, 2];
+let speed = +localStorage.getItem('pn-speed') || 1;
+if (!SPEEDS.includes(speed)) speed = 1;
 const settings = { ec: localStorage.getItem('pn-ec') === '1', stt: localStorage.getItem('pn-stt') !== '0' };
 const TAGS = [['cut', 'Cut'], ['keep', 'Keep'], ['fix', 'Fix audio'], ['clip', 'Clip']];
 function say(el, text) { $(el).textContent = text || ''; }
@@ -375,7 +389,7 @@ async function openEpisode(ep) {
   if (objUrl) URL.revokeObjectURL(objUrl);
   objUrl = URL.createObjectURL(ep.file);
   audio.src = objUrl;
-  audio.playbackRate = speed;
+  setSpeed(speed);
   const p = splitName(ep.name);
   $('#showname').textContent = p.show || 'Episodes';
   $('#eptitle').textContent = p.title;
@@ -430,8 +444,36 @@ $('#play').onclick = () => { if (audio.paused) audio.play().catch(() => say('#ms
 $('#b15').onclick = () => skip(-15);
 $('#f30').onclick = () => skip(30);
 $('#seek').oninput = e => { seeking = true; $('#tcur').textContent = fmt(+e.target.value); e.target.style.setProperty('--p', (+e.target.value / +e.target.max * 100).toFixed(2) + '%'); };
-$('#seek').onchange = e => { audio.currentTime = +e.target.value; seeking = false; drawTime(); };
-$('#speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; audio.playbackRate = speed; $('#speed').innerHTML = speed + '&times;'; };
+$('#seek').onchange = e => { audio.currentTime = +e.target.value; seeking = false; drawTime(); savePos(true); };
+/* save the listening spot whenever the app is hidden or closed */
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') savePos(true); });
+window.addEventListener('pagehide', () => savePos(true));
+/* speed: tap the speed to see every choice, tap one to use it; the app remembers it */
+const xs = v => String(v).replace(/^0\./, '.') + '\u00d7';
+function setSpeed(v) {
+  speed = v;
+  localStorage.setItem('pn-speed', String(v));
+  audio.defaultPlaybackRate = v;   // survives loading the next episode
+  audio.playbackRate = v;
+  try { audio.preservesPitch = true; } catch (e) {}
+  $('#speed').textContent = xs(v);
+  for (const b of $('#speeds').children) b.classList.toggle('on', +b.dataset.v === v);
+  drawTime();
+}
+for (const v of SPEEDS) {
+  const b = document.createElement('button');
+  b.dataset.v = v;
+  b.textContent = xs(v);
+  b.onclick = () => { setSpeed(v); showSpeeds(false); };
+  $('#speeds').appendChild(b);
+}
+function showSpeeds(on) {
+  $('#speeds').classList.toggle('hidden', !on);
+  $('#speed').classList.toggle('open', on);
+  $('#speed').setAttribute('aria-expanded', on ? 'true' : 'false');
+}
+$('#speed').onclick = () => showSpeeds($('#speeds').classList.contains('hidden'));
+setSpeed(speed);
 $('#back').onclick = showLibrary;
 $('#remove').onclick = async () => {
   if (!cur || !confirm('Remove this episode and its notes from the app?')) return;
@@ -664,7 +706,7 @@ function drawNotes() {
         s.disabled = true;
         try {
           const blob = await encodeMono([await decodeNote(n, 44100)], 44100, 0);
-          saveBlob(blob, cur.name + ' note at ' + fmt(n.pos).replace(/:/g, 'm') + 's.mp3');
+          saveBlob(blob, cur.name + ' - note at ' + fmt(n.pos).replace(/:/g, '.') + '.mp3');
         } catch (e) { say('#msg', 'That note could not be saved.'); }
         s.disabled = false;
       };
@@ -723,8 +765,8 @@ function noteTags(n) {
   }
   return box;
 }
-$('#elsave').onclick = () => { if (cur && notes.length) saveBlob(editListFile(cur, notes), cur.name + ' edit list.txt'); };
-$('#elshare').onclick = () => { if (cur && notes.length) shareBlob(editListFile(cur, notes), cur.name + ' edit list.txt'); };
+$('#elsave').onclick = () => { if (cur && notes.length) saveBlob(editListFile(cur, notes), cur.name + ' - edit list.txt'); };
+$('#elshare').onclick = () => { if (cur && notes.length) shareBlob(editListFile(cur, notes), cur.name + ' - edit list.txt'); };
 function previewNote(n, btn) {
   if (preview) { preview.a.pause(); preview.btn.classList.remove('on'); preview.btn.innerHTML = I.play; const same = preview.n === n; preview = null; if (same) return; }
   const wasPlaying = !audio.paused;
@@ -761,9 +803,9 @@ function drawFiles() {
   $('#filesmeta').textContent = render ? (render.noteCount === 1 ? '1 note' : render.noteCount + ' notes') : '';
   const canShare = !inViewer && !!(navigator.share && navigator.canShare);
   const kinds = [
-    { r: render, tile: 'ink', icon: I.wave, k: 'Episode with your notes in it' },
-    { r: render2, tile: 'red', icon: I.mic, k: 'Your notes alone' },
-    { r: render3, tile: 'tone', icon: I.doc, k: 'Edit list: times, tags and text' },
+    { r: render, tile: 'ink', icon: I.wave, k: 'Episode with notes' },
+    { r: render2, tile: 'red', icon: I.mic, k: 'Notes only' },
+    { r: render3, tile: 'tone', icon: I.doc, k: 'Edit list' },
   ];
   const list = $('#filelist');
   list.innerHTML = '';
@@ -856,13 +898,13 @@ $('#render').onclick = async () => {
   try {
     const list = notes.slice();
     const out = await renderEpisode(ep, list, renderProgress);
-    render = { episodeId: ep.id, blob: out.blob, seconds: out.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' with notes.mp3' };
+    render = { episodeId: ep.id, blob: out.blob, seconds: out.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - with notes.mp3' };
     await idb.put('renders', render);
     renderProgress(1, 'Making the file of just your notes');
     const nf = await notesOnlyFile(list);
-    render2 = { episodeId: ep.id + ':notes', blob: nf.blob, seconds: nf.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' notes only.mp3' };
+    render2 = { episodeId: ep.id + ':notes', blob: nf.blob, seconds: nf.seconds, createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - notes only.mp3' };
     await idb.put('renders', render2);
-    render3 = { episodeId: ep.id + ':times', blob: editListFile(ep, list), createdAt: Date.now(), noteCount: list.length, name: ep.name + ' edit list.txt' };
+    render3 = { episodeId: ep.id + ':times', blob: editListFile(ep, list), createdAt: Date.now(), noteCount: list.length, name: ep.name + ' - edit list.txt' };
     await idb.put('renders', render3);
   } catch (err) {
     console.error(err);
@@ -1027,6 +1069,87 @@ function offerAppFile(dl) {
   return true;
 }
 if (inViewer) window.claude.use('downloads').then(offerAppFile).catch(() => {});
+
+/* ---------- keeping everything safe ----------
+   Notes live in this browser. Ask the browser never to clear them, and offer a backup file
+   with every note (voice, text, tag) and every listening spot. Episodes are not in the file:
+   they are big and you already have the MP3s. */
+async function keepStorage() {
+  try { if (navigator.storage && navigator.storage.persist && !(await navigator.storage.persisted())) await navigator.storage.persist(); } catch (e) {}
+}
+async function drawBackupNote() {
+  const at = +localStorage.getItem('pn-backup-at') || 0;
+  let kept = false;
+  try { kept = !!(navigator.storage && navigator.storage.persisted && await navigator.storage.persisted()); } catch (e) {}
+  $('#backupnote').textContent = (at ? 'Last backup ' + new Date(at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + '. ' : 'No backup yet. ')
+    + (kept ? 'This phone will not clear your notes on its own.' : 'Save a backup now and then. It goes to Downloads.');
+}
+const toB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+function fromB64(b64, type) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type }); }
+$('#backup').onclick = async () => {
+  if (rec) await stopRecord();
+  const btn = $('#backup');
+  btn.disabled = true;
+  say('#libmsg', 'Making the backup');
+  try {
+    const eps = await idb.all('episodes'), all = await idb.all('notes');
+    const byId = new Map(eps.map(e => [e.id, e]));
+    const out = { app: 'podcast-notes', version: 1, savedAt: new Date().toISOString(),
+      episodes: eps.map(e => ({ name: e.name, lastPos: e.lastPos || 0, duration: e.duration || 0 })), notes: [] };
+    for (const n of all) {
+      const ep = byId.get(n.episodeId);
+      if (!ep) continue;
+      out.notes.push({ id: n.id, episode: ep.name, pos: n.pos, dur: n.dur, createdAt: n.createdAt, updatedAt: n.updatedAt || null,
+        tag: n.tag || null, text: n.text == null ? null : n.text, type: n.blob.type, audio: await toB64(n.blob) });
+    }
+    const d = new Date(), stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    saveBlob(new Blob([JSON.stringify(out)], { type: 'application/json' }), 'Podcast Notes backup ' + stamp + '.json');
+    localStorage.setItem('pn-backup-at', String(Date.now()));
+    say('#libmsg', 'Backup saved: ' + (out.notes.length === 1 ? '1 note' : out.notes.length + ' notes') + '.');
+  } catch (e) { say('#libmsg', 'The backup could not be made. ' + (e && e.message ? e.message : '')); }
+  btn.disabled = false;
+  drawBackupNote();
+};
+$('#restore').onclick = () => $('#restorefile').click();
+$('#restorefile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try { await restoreBackup(JSON.parse(await f.text())); }
+  catch (err) { say('#libmsg', 'That file is not a Podcast Notes backup.'); }
+};
+async function restoreBackup(b) {
+  if (!b || b.app !== 'podcast-notes' || !Array.isArray(b.notes)) throw new Error('not a backup');
+  const eps = await idb.all('episodes'), byName = new Map(eps.map(x => [x.name, x]));
+  let added = 0, kept = 0, waiting = 0;
+  for (const x of b.episodes || []) {
+    const ep = byName.get(x.name);
+    if (ep && !(ep.lastPos > 0) && x.lastPos > 0) { ep.lastPos = x.lastPos; await idb.put('episodes', ep); }
+  }
+  for (const x of b.notes) {
+    const ep = byName.get(x.episode);
+    if (!ep) { waiting++; continue; }
+    const have = await idb.get('notes', x.id);
+    if (have) {
+      /* keep what is on the phone, but fill in text or a tag it does not have yet */
+      let changed = false;
+      if (have.text == null && x.text != null) { have.text = x.text; changed = true; }
+      if (!have.tag && x.tag) { have.tag = x.tag; changed = true; }
+      if (changed) { have.updatedAt = Date.now(); await idb.put('notes', have); }
+      kept++;
+      continue;
+    }
+    await idb.put('notes', { id: x.id, episodeId: ep.id, pos: x.pos, dur: x.dur, createdAt: x.createdAt || Date.now(), updatedAt: x.updatedAt || undefined,
+      tag: x.tag || null, text: x.text == null ? undefined : x.text, blob: fromB64(x.audio, x.type || 'audio/webm') });
+    added++;
+  }
+  const parts = [added ? 'Restored ' + (added === 1 ? '1 note' : added + ' notes') + '.' : 'Nothing new to restore.'];
+  if (kept) parts.push(kept === 1 ? '1 note was already here.' : kept + ' notes were already here.');
+  if (waiting) parts.push(waiting + ' belong to episodes not in the app. Add those MP3s with the same names, then restore again.');
+  say('#libmsg', parts.join(' '));
+  await drawLibrary();
+}
+keepStorage().then(drawBackupNote);
 
 window.__pn = { importFiles, renderEpisode, mapMp3, idb, openEpisode, showLibrary, offerAppFile, splitName, setChunk: s => { CHUNK_SEC = s; } };
 showLibrary();
